@@ -9,9 +9,10 @@ use rdev::{EventType, Key};
 use serde_json::{json, Value};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
+use windows_sys::Win32::Foundation::RECT;
 use windows_sys::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_MEMORY, SND_NODEFAULT};
-use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow};
+use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowRect, SetForegroundWindow};
 
 // Our own sound (made by tools/make-chime.mjs) so "//" never sounds like a Windows notification.
 static CHIME: &[u8] = include_bytes!("../sounds/chime.wav");
@@ -140,12 +141,46 @@ fn open_popup(app: &AppHandle) {
   thread::spawn(move || {
     thread::sleep(Duration::from_millis(50)); // let the second "/" reach the target app first
     if let Some(w) = app.get_webview_window("popup") {
-      let _ = w.center();
+      center_on_target_monitor(&w);
       let _ = w.show();
       let _ = w.set_focus();
       let _ = w.emit("popup-open", ());
     }
   });
+}
+
+/// Top-left corner that centres a `size` window inside the `area` rectangle (physical pixels).
+fn centered(area_pos: (i32, i32), area_size: (u32, u32), size: (f64, f64)) -> (i32, i32) {
+  let x = area_pos.0 as f64 + (area_size.0 as f64 - size.0) / 2.0;
+  let y = area_pos.1 as f64 + (area_size.1 as f64 - size.1) / 2.0;
+  (x.round() as i32, y.round() as i32)
+}
+
+/// Put the picker in the middle of the screen that holds the app the user was typing in,
+/// not wherever the picker was last shown.
+fn center_on_target_monitor(w: &WebviewWindow) {
+  let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+  let target = TARGET.load(SeqCst);
+  let monitor = if unsafe { GetWindowRect(target as _, &mut r) } != 0 {
+    let (cx, cy) = ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+    w.monitor_from_point(cx as f64, cy as f64).ok().flatten()
+  } else {
+    None
+  };
+  let Some(m) = monitor.or_else(|| w.primary_monitor().ok().flatten()) else {
+    let _ = w.center();
+    return;
+  };
+  // The picker takes the target screen's scaling once it lands there, so size it for that screen.
+  let scale = m.scale_factor() / w.scale_factor().unwrap_or(1.0);
+  let size = w.outer_size().unwrap_or_default();
+  let area = m.work_area();
+  let (x, y) = centered(
+    (area.position.x, area.position.y),
+    (area.size.width, area.size.height),
+    (size.width as f64 * scale, size.height as f64 * scale),
+  );
+  let _ = w.set_position(PhysicalPosition::new(x, y));
 }
 
 fn start_hook(app: AppHandle) {
@@ -247,8 +282,16 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-  use super::is_trigger;
+  use super::{centered, is_trigger};
   use std::time::Duration;
+
+  #[test]
+  fn centre_on_screen() {
+    // A 440x320 picker on a 1920x1040 work area that sits above the primary screen.
+    assert_eq!(centered((0, -1080), (1920, 1040), (440.0, 320.0)), (740, -720));
+    // A screen to the left of the primary one, at 150% scaling (660x480 physical).
+    assert_eq!(centered((-2560, 0), (2560, 1400), (660.0, 480.0)), (-1610, 460));
+  }
 
   #[test]
   fn trigger() {
