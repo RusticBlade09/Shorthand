@@ -1,0 +1,266 @@
+/* Windows 11 Fluent, matching Ramble (VoxType/voxtype-tauri/ui/styles.css): same tokens,
+   same controls. The accent defaults are Windows' blue; theme.js swaps in the user's own. */
+:root {
+  --sys-accent-light2: #76b9ed;
+  --sys-accent-dark1: #005a9e;
+  --radius: 4px;
+  --radius-overlay: 8px;
+
+  color-scheme: dark;
+  --accent: var(--sys-accent-light2);
+  --accent-hover: color-mix(in srgb, var(--accent) 90%, transparent);
+  --accent-pressed: color-mix(in srgb, var(--accent) 80%, transparent);
+  --text-on-accent: #000;
+
+  --text: #fff;
+  --sub: rgba(255, 255, 255, .786);
+  --text-3: rgba(255, 255, 255, .5442);
+  --layer: rgba(58, 58, 58, .3);
+  --surface: rgba(255, 255, 255, .0512);
+  --surface-2: rgba(255, 255, 255, .0326);
+  --control: rgba(255, 255, 255, .0605);
+  --control-hover: rgba(255, 255, 255, .0837);
+  --control-pressed: rgba(255, 255, 255, .0326);
+  --control-input-active: rgba(30, 30, 30, .7);
+  --subtle-hover: rgba(255, 255, 255, .0605);
+  --subtle-pressed: rgba(255, 255, 255, .0419);
+  --border: rgba(255, 255, 255, .0698);
+  --border-accent: rgba(0, 0, 0, .14);
+  --divider: rgba(255, 255, 255, .0837);
+  --solid-bg: #202020;
+  --focus-outer: #fff;
+  --focus-inner: rgba(0, 0, 0, .7);
+  --danger: #ff99a4;
+  --shadow-flyout: 0 8px 16px rgba(0, 0, 0, .28);
+}
+
+body.light {
+  color-scheme: light;
+  --accent: var(--sys-accent-dark1);
+  --text-on-accent: #fff;
+
+  --text: rgba(0, 0, 0, .8956);
+  --sub: rgba(0, 0, 0, .6063);
+  --text-3: rgba(0, 0, 0, .4458);
+  --layer: rgba(255, 255, 255, .5);
+  --surface: rgba(255, 255, 255, .7);
+  --surface-2: rgba(246, 246, 246, .5);
+  --control: rgba(255, 255, 255, .7);
+  --control-hover: rgba(249, 249, 249, .5);
+  --control-pressed: rgba(249, 249, 249, .3);
+  --control-input-active: #fff;
+  --subtle-hover: rgba(0, 0, 0, .0373);
+  --subtle-pressed: rgba(0, 0, 0, .0241);
+  --border: rgba(0, 0, 0, .0578);
+  --border-accent: rgba(255, 255, 255, .08);
+  --divider: rgba(0, 0, 0, .0803);
+  --solid-bg: #f3f3f3;
+  --focus-outer: rgba(0, 0, 0, .8956);
+  --focus-inner: #fff;
+  --danger: #c42b1c;
+  --shadow-flyout: 0 8px 16px rgba(0, 0, 0, .14);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+/* Transparent so the Mica backdrop (tauri.conf.json windowEffects) shows through. */
+body {
+  background: transparent;
+  color: var(--text);
+  font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  overflow: hidden;
+  user-select: none;
+}
+
+* { scrollbar-width: thin; scrollbar-color: var(--text-3) transparent; }
+
+:focus-visible {
+  outline: 2px solid var(--focus-outer);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 1px var(--focus-inner);
+}
+
+/* ---- main window: Mica sidebar + floating content layer (like Windows Settings) ---- */
+.app { display: flex; height: 100vh; }
+.side {
+  width: 220px; flex: none;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 20px 12px;
+}
+.nav { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; flex: 1; }
+.nav-btn {
+  all: unset; cursor: pointer; position: relative; box-sizing: border-box;
+  min-height: 36px; padding: 0 12px; border-radius: var(--radius);
+  display: flex; align-items: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background .1s;
+}
+.nav-btn:hover { background: var(--subtle-hover); }
+.nav-btn:active { background: var(--subtle-pressed); color: var(--sub); }
+/* Windows marks the selected item with a 3x16 accent pill, not a filled button. */
+.nav-btn.active { background: var(--subtle-hover); font-weight: 600; }
+.nav-btn.active::before {
+  content: ""; position: absolute; left: 0; top: 50%;
+  width: 3px; height: 16px; border-radius: 2px; background: var(--accent);
+  transform: translateY(-50%);
+}
+.nav-btn .slash { color: var(--accent); }
+.side-foot { padding: 10px 8px 0; border-top: 1px solid var(--divider); display: flex; flex-direction: column; gap: 10px; }
+
+/* Fluent ToggleSwitch (from Ramble): a real checkbox, so keyboard and screen readers still work. */
+.switch { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.switch input {
+  appearance: none; margin: 0;
+  position: relative; flex: none; width: 40px; height: 20px; border-radius: 10px;
+  background: var(--control); border: 1px solid var(--text-3); cursor: pointer;
+  transition: background .1s, border-color .1s;
+}
+.switch input::after {
+  content: ""; position: absolute; left: 3px; top: 50%;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--text); transform: translateY(-50%);
+  transition: transform .1s cubic-bezier(.4, 0, .2, 1), background .1s;
+}
+.switch input:hover { background: var(--control-hover); }
+.switch input:checked { background: var(--accent); border-color: transparent; }
+.switch input:checked::after { background: var(--text-on-accent); transform: translateY(-50%) translateX(20px); }
+.switch input:checked:hover { background: var(--accent-hover); }
+
+.main {
+  flex: 1; overflow-y: auto; padding: 28px 36px;
+  background: var(--layer);
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-radius: var(--radius-overlay) 0 0 0;
+}
+.main form { display: flex; flex-direction: column; height: 100%; max-width: 820px; }
+
+h1 {
+  font-family: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", sans-serif;
+  font-size: 28px; line-height: 36px; font-weight: 600; margin-bottom: 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lbl { display: block; font-weight: 600; margin: 16px 0 6px; }
+.hint { color: var(--sub); font-size: 12px; line-height: 16px; margin-top: 4px; }
+kbd {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 1px 6px; font-size: 12px; font-family: inherit;
+}
+.note { color: var(--danger); min-height: 20px; margin-top: 8px; }
+
+/* Fluent TextBox: flat at rest, 2px accent underline on focus (padding drops 1px so text doesn't shift). */
+.ctrl {
+  width: 100%;
+  font: inherit; color: var(--text);
+  background: var(--control);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 5px 11px; min-height: 32px; outline: none;
+  user-select: text;
+  transition: background .1s, border-color .1s;
+}
+.ctrl:hover { background: var(--control-hover); }
+.ctrl:focus {
+  background: var(--control-input-active);
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 4px;
+}
+textarea.ctrl { flex: 1; min-height: 120px; resize: none; }
+
+.row { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.btn {
+  all: unset; cursor: pointer; box-sizing: border-box;
+  min-height: 32px; padding: 5px 12px; border-radius: var(--radius);
+  text-align: center;
+  background: var(--control); color: var(--text);
+  border: 1px solid var(--border);
+  transition: background .1s;
+}
+.btn:hover { background: var(--control-hover); }
+.btn:active { background: var(--control-pressed); color: var(--sub); }
+.btn.primary {
+  background: var(--accent); color: var(--text-on-accent); font-weight: 600;
+  border-color: transparent; border-bottom-color: var(--border-accent);
+}
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.primary:active { background: var(--accent-pressed); }
+.btn.danger { color: var(--danger); }
+[hidden] { display: none !important; }
+
+.ctrl[aria-invalid="true"] { border-color: var(--danger); }
+
+/* Themed tooltip (one shared element, placed by JS) — replaces the browser's own title
+   tips and "Please fill out this field" bubbles, same as Ramble's. */
+.tooltip {
+  position: fixed; left: 0; top: 0;
+  max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: var(--solid-bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 5px 10px; font-size: 12px; line-height: 16px;
+  box-shadow: var(--shadow-flyout);
+  pointer-events: none; z-index: 1000; opacity: 0;
+  transition: opacity .12s ease, transform .12s ease;
+}
+.tooltip.right { transform: translate(0, -50%); }
+.tooltip.right.on { transform: translate(6px, -50%); }
+.tooltip.below { transform: translateY(0); }
+.tooltip.below.on { transform: translateY(4px); }
+.tooltip.on { opacity: 1; }
+.tooltip.error { border-color: var(--danger); }
+
+/* Confirm dialog (Fluent ContentDialog, as in Ramble). */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 70;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .3);
+}
+.modal {
+  width: min(400px, 92vw);
+  background: var(--solid-bg); border: 1px solid var(--border);
+  border-radius: var(--radius-overlay); padding: 20px 22px 22px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .32);
+  animation: modalIn .12s ease-out;
+}
+@keyframes modalIn { from { opacity: 0; transform: scale(.97); } }
+.modal h3 { font-size: 16px; line-height: 22px; font-weight: 600; margin-bottom: 8px; }
+.modal p { color: var(--sub); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.modal-actions .btn { min-width: 96px; }
+
+.toast {
+  position: fixed; right: 18px; bottom: 18px;
+  background: var(--solid-bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-overlay);
+  padding: 8px 14px; box-shadow: var(--shadow-flyout);
+  opacity: 0; transform: translateY(6px);
+  transition: opacity .2s ease, transform .2s ease; pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+
+/* ---- the // picker: an opaque flyout (Windows gives the frameless window its rounded corners + shadow) ---- */
+body.popup { background: var(--solid-bg); display: flex; flex-direction: column; }
+.popup .search {
+  all: unset; box-sizing: border-box; width: 100%;
+  padding: 14px 16px; font-size: 16px; line-height: 22px;
+  border-bottom: 1px solid var(--divider); user-select: text;
+}
+.popup .search::placeholder { color: var(--text-3); }
+.popup ul { list-style: none; flex: 1; overflow-y: auto; padding: 4px; }
+.popup li {
+  position: relative; cursor: pointer;
+  display: flex; flex-direction: column;
+  padding: 6px 12px; margin: 2px 0; border-radius: var(--radius);
+}
+.popup li:hover { background: var(--subtle-hover); }
+.popup li.active { background: var(--subtle-hover); }
+.popup li.active::before {
+  content: ""; position: absolute; left: 0; top: 50%;
+  width: 3px; height: 16px; border-radius: 2px; background: var(--accent);
+  transform: translateY(-50%);
+}
+.popup li b { font-weight: 600; }
+.popup li span { color: var(--sub); font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.popup li.empty { cursor: default; color: var(--sub); }
+.popup li.empty:hover { background: none; }

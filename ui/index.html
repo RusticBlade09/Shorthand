@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Shorthand</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app" id="app">
+  <nav class="side" aria-label="Commands">
+    <button class="btn primary" id="new">New command</button>
+    <input class="ctrl" id="search" placeholder="Search commands" aria-label="Search commands" autocomplete="off" spellcheck="false">
+    <div class="nav" id="list"></div>
+    <div class="side-foot">
+      <label class="switch"><input type="checkbox" id="chime"> Chime sound</label>
+      <p class="hint">Type <kbd>//</kbd> anywhere to insert a command.</p>
+    </div>
+  </nav>
+  <main class="main">
+    <form id="form" novalidate>
+      <h1 id="title">New command</h1>
+      <label class="lbl" for="name">Name</label>
+      <input class="ctrl" id="name" autocomplete="off" spellcheck="false">
+      <label class="lbl" for="text">Text to insert</label>
+      <textarea class="ctrl" id="text"></textarea>
+      <div class="row">
+        <button type="submit" class="btn primary">Save</button>
+        <button type="button" id="del" class="btn danger">Delete</button>
+      </div>
+      <p class="note" id="msg" role="alert"></p>
+    </form>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="confirm" hidden>
+  <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+    <h3 id="confirmTitle">Delete this command?</h3>
+    <p id="confirmText"></p>
+    <div class="modal-actions">
+      <button class="btn primary" id="confirmYes">Delete</button>
+      <button class="btn" id="confirmNo">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+<div class="tooltip" id="tip" role="tooltip"></div>
+<script src="theme.js"></script>
+<script>
+const { invoke } = window.__TAURI__.core;
+const $ = id => document.getElementById(id);
+let cmds = [], current = -1, loaded = false, toastTimer;
+
+function toast(text) {
+  $('toast').textContent = text;
+  $('toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $('toast').classList.remove('show'), 1600);
+}
+
+// ---- tooltips: hover tips (to the right) and field errors (below the field) ----
+function showTip(el, text, place = 'right', error = false) {
+  if (!text) return hideTip();
+  const tip = $('tip'), r = el.getBoundingClientRect();
+  tip.textContent = text;
+  tip.className = 'tooltip ' + place + (error ? ' error' : '');
+  tip.style.left = (place === 'right' ? r.right : r.left) + 'px';
+  tip.style.top = (place === 'right' ? r.top + r.height / 2 : r.bottom) + 'px';
+  void tip.offsetWidth; // apply the start position before fading in
+  tip.classList.add('on');
+}
+function hideTip() { $('tip').classList.remove('on'); }
+
+function fieldError(el, text) {
+  el.setAttribute('aria-invalid', 'true');
+  el.focus();
+  showTip(el, text, 'below', true);
+}
+for (const id of ['name', 'text']) {
+  $(id).addEventListener('input', () => { $(id).removeAttribute('aria-invalid'); hideTip(); });
+}
+
+// ---- delete confirmation ----
+function confirmDelete(name) {
+  $('confirmText').textContent = '//' + name + ' will be removed. This can\'t be undone.';
+  $('confirm').hidden = false;
+  $('app').inert = true; // keep Tab inside the dialog
+  $('confirmNo').focus(); // the safe choice is the default
+  return new Promise(resolve => {
+    const close = yes => {
+      $('confirm').hidden = true;
+      $('app').inert = false;
+      document.removeEventListener('keydown', onKey);
+      resolve(yes);
+    };
+    const onKey = e => { if (e.key === 'Escape') close(false); };
+    document.addEventListener('keydown', onKey);
+    $('confirmYes').onclick = () => close(true);
+    $('confirmNo').onclick = () => close(false);
+    $('confirm').onclick = e => { if (e.target === $('confirm')) close(false); };
+  });
+}
+
+// cmds is always kept A–Z, so list positions and cmds indexes stay the same thing.
+const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+
+function render() {
+  const q = $('search').value.trim().toLowerCase();
+  $('list').innerHTML = '';
+  cmds.forEach((c, i) => {
+    if (q && !(c.name + '\n' + c.text).toLowerCase().includes(q)) return;
+    const b = document.createElement('button');
+    b.className = 'nav-btn' + (i === current ? ' active' : '');
+    const slash = document.createElement('span');
+    slash.className = 'slash';
+    slash.textContent = '//';
+    b.append(slash, c.name);
+    b.onclick = () => edit(i);
+    b.onmouseenter = () => showTip(b, c.text.split('\n')[0]);
+    b.onmouseleave = hideTip;
+    $('list').append(b);
+  });
+  if (q && !$('list').children.length) $('list').innerHTML = '<p class="hint" style="padding: 0 12px">No matches</p>';
+  $('del').hidden = current < 0;
+  $('title').textContent = current < 0 ? 'New command' : '//' + cmds[current].name;
+}
+
+function edit(i) {
+  current = i;
+  $('name').value = i < 0 ? '' : cmds[i].name;
+  $('text').value = i < 0 ? '' : cmds[i].text;
+  $('name').removeAttribute('aria-invalid');
+  $('text').removeAttribute('aria-invalid');
+  $('msg').textContent = '';
+  hideTip();
+  render();
+  $('name').focus();
+}
+
+async function save(next) {
+  try {
+    await invoke('save_commands', { list: next });
+    cmds = next;
+    $('msg').textContent = '';
+    return true;
+  } catch (e) {
+    $('msg').textContent = 'Could not save: ' + e;
+    return false;
+  }
+}
+
+$('new').onclick = () => edit(-1);
+$('search').oninput = render;
+$('search').onkeydown = e => { if (e.key === 'Escape') { $('search').value = ''; render(); } };
+
+invoke('get_chime').then(on => { $('chime').checked = on; });
+$('chime').onchange = async () => {
+  const on = $('chime').checked;
+  try {
+    await invoke('set_chime', { on });
+    toast(on ? 'Chime on' : 'Chime off');
+  } catch (e) {
+    $('chime').checked = !on;
+    $('msg').textContent = 'Could not save the setting: ' + e;
+  }
+};
+
+$('form').onsubmit = async e => {
+  e.preventDefault();
+  if (!loaded) return; // never overwrite a file we could not read
+  const name = $('name').value.trim(), text = $('text').value;
+  if (!name) return fieldError($('name'), 'Give the command a name.');
+  if (/[\s/]/.test(name)) return fieldError($('name'), 'The name can\'t have spaces or a /.');
+  if (cmds.some((c, i) => i !== current && c.name.toLowerCase() === name.toLowerCase())) {
+    return fieldError($('name'), '//' + name + ' already exists.');
+  }
+  if (!text.trim()) return fieldError($('text'), 'Type the text this command should insert.');
+  const next = [...cmds], entry = { name, text };
+  next[current < 0 ? next.length : current] = entry;
+  next.sort(byName);
+  if (await save(next)) { current = next.indexOf(entry); render(); toast('Saved'); }
+};
+
+$('del').onclick = async () => {
+  if (current < 0 || !(await confirmDelete(cmds[current].name))) return $('del').focus();
+  if (await save(cmds.filter((_, i) => i !== current))) { edit(-1); toast('Deleted'); }
+};
+
+invoke('load_commands')
+  .then(list => { cmds = list.sort(byName); loaded = true; edit(-1); })
+  .catch(e => { $('msg').textContent = 'Could not load commands: ' + e; });
+</script>
+</body>
+</html>

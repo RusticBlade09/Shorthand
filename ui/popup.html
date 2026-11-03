@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Shorthand</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="popup">
+<input class="search" id="q" placeholder="Type a command…" autocomplete="off" spellcheck="false" aria-label="Search commands">
+<ul id="list" role="listbox"></ul>
+<script src="theme.js"></script>
+<script>
+const { invoke } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
+const q = document.getElementById('q'), list = document.getElementById('list');
+let cmds = [], hits = [], sel = 0;
+
+function render() {
+  const s = q.value.replace(/\//g, '').toLowerCase(); // a stray "/" may land here
+  hits = cmds
+    .filter(c => c.name.toLowerCase().includes(s))
+    .sort((a, b) => b.name.toLowerCase().startsWith(s) - a.name.toLowerCase().startsWith(s));
+  sel = Math.min(sel, Math.max(hits.length - 1, 0));
+  list.innerHTML = '';
+  hits.forEach((c, i) => {
+    const li = document.createElement('li');
+    li.setAttribute('role', 'option');
+    if (i === sel) li.className = 'active';
+    const b = document.createElement('b'), span = document.createElement('span');
+    b.textContent = '//' + c.name;
+    span.textContent = c.text.split('\n')[0];
+    li.append(b, span);
+    li.onclick = () => pick(c);
+    list.append(li);
+  });
+  if (!hits.length) list.innerHTML = '<li class="empty">No matches</li>';
+  list.children[sel]?.scrollIntoView({ block: 'nearest' });
+}
+
+function pick(c) { invoke('insert', { text: c.text }); }
+
+q.oninput = () => { sel = 0; render(); };
+q.onkeydown = e => {
+  if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, hits.length - 1); render(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); render(); e.preventDefault(); }
+  else if (e.key === 'Enter' && hits[sel]) pick(hits[sel]);
+  else if (e.key === 'Escape') invoke('hide_popup', { restore: true });
+};
+
+listen('popup-open', async () => {
+  q.value = '';
+  sel = 0;
+  try { cmds = await invoke('load_commands'); } catch { cmds = []; }
+  render();
+  q.focus();
+});
+</script>
+</body>
+</html>

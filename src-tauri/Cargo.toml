@@ -1,0 +1,25 @@
+[package]
+name = "shorthand"
+version = "0.1.0"
+description = "Type // to insert saved phrases anywhere in Windows"
+authors = ["RusticBlade09"]
+license = "MIT"
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+tauri = { version = "2.11.3", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+rdev = "0.5"
+arboard = "3"
+windows = { version = "0.62", features = ["UI_ViewManagement"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Media_Audio"] }
