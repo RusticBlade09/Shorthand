@@ -37,10 +37,14 @@ Then, in any chat or email, type `//`, then `wifi`, and press Enter: all three l
   `cd src-tauri && cargo tauri icon icons/source.png` (delete the `android`/`ios` folders it makes).
   `cargo tauri dev` does not notice icon changes — touch `build.rs` to force a rebuild.
 - Esc in the picker returns focus to the window you were typing in; clicking away does not.
+- Optional **shortcut key** (sidebar → Shortcut key: click, hold Ctrl and/or Alt, press a key) opens
+  the list too, without typing `//`. Backspace in that box removes it.
+- The clipboard is put back after pasting (text or images; copied files are not restored).
+- Only one copy runs: starting it again just shows the open window.
 
 ## Data
 `%APPDATA%\com.shorthand.app\commands.json` — `[{ "name": "...", "text": "..." }]`.
-`%APPDATA%\com.shorthand.app\settings.json` — `{ "chime": true }` (the "Chime sound" switch in the sidebar).
+`%APPDATA%\com.shorthand.app\settings.json` — `{ "chime": true, "shortcut": "Ctrl+Shift+Space" }` (sidebar settings).
 Both saved via a temp file + rename, so a crash can't wipe them.
 
 ## Build / run
@@ -54,7 +58,6 @@ For a release, use `powershell -File tools\build-release.ps1` instead of `cargo 
 it keeps your Windows user folder path (and so your name) out of `shorthand.exe`.
 
 ## Known limits
-- Pasting overwrites whatever was on the clipboard.
+- If you had files (not text or an image) copied, pasting a command replaces them on the clipboard.
 - Typing `//` in code or a path also opens the list (Esc closes it).
-- Only one copy should run at a time (no single-instance guard yet).
 - To stop it starting with Windows: Task Manager → Startup apps → Shorthand → Disable.

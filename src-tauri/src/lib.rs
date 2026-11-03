@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use windows_sys::Win32::Foundation::RECT;
 use windows_sys::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_MEMORY, SND_NODEFAULT};
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowRect, SetForegroundWindow};
@@ -23,6 +24,8 @@ static TARGET: AtomicIsize = AtomicIsize::new(0);
 static POPUP_OPEN: AtomicBool = AtomicBool::new(false);
 // Chime on/off, from settings.json (loaded at startup, changed by set_chime).
 static CHIME_ON: AtomicBool = AtomicBool::new(true);
+// Whether the open picker came from typing "//" (see open_popup).
+static TYPED: AtomicBool = AtomicBool::new(true);
 
 // The two slashes must come quickly; a "/" typed long after another one is just text.
 const MAX_GAP: Duration = Duration::from_secs(2);
@@ -65,16 +68,47 @@ fn save_commands(app: AppHandle, list: Value) -> Result<(), String> {
   write_json(&app, "commands.json", &list)
 }
 
+/// settings.json, e.g. { "chime": true, "shortcut": "Ctrl+Shift+Space" }. Missing or unreadable = defaults.
 #[tauri::command]
-fn get_chime() -> bool {
-  CHIME_ON.load(SeqCst)
+fn get_settings(app: AppHandle) -> Value {
+  read_json(&app, "settings.json", json!({})).unwrap_or_else(|_| json!({}))
+}
+
+fn save_setting(app: &AppHandle, key: &str, value: Value) -> Result<(), String> {
+  let mut settings = get_settings(app.clone());
+  if !settings.is_object() {
+    settings = json!({});
+  }
+  settings[key] = value;
+  write_json(app, "settings.json", &settings)
 }
 
 #[tauri::command]
 fn set_chime(app: AppHandle, on: bool) -> Result<(), String> {
-  write_json(&app, "settings.json", &json!({ "chime": on }))?;
+  save_setting(&app, "chime", json!(on))?;
   CHIME_ON.store(on, SeqCst);
   Ok(())
+}
+
+/// Register `shortcut` (e.g. "Ctrl+Shift+Space", "" = none) as an extra way to open the picker.
+fn register_shortcut(app: &AppHandle, shortcut: &str) -> Result<(), String> {
+  let keys = app.global_shortcut();
+  keys.unregister_all().map_err(|e| e.to_string())?;
+  if shortcut.is_empty() {
+    return Ok(());
+  }
+  keys.register(shortcut).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_shortcut(app: AppHandle, shortcut: String) -> Result<(), String> {
+  if let Err(e) = register_shortcut(&app, &shortcut) {
+    // Usually another app owns that combination; keep the old shortcut working.
+    let old = get_settings(app.clone())["shortcut"].as_str().unwrap_or("").to_string();
+    let _ = register_shortcut(&app, &old);
+    return Err(e);
+  }
+  save_setting(&app, "shortcut", json!(shortcut))
 }
 
 /// Windows' accent shades + light/dark, so the UI matches the OS (same source as Ramble's theme.rs).
@@ -120,18 +154,31 @@ async fn insert(app: AppHandle, text: String) -> Result<(), String> {
   hide_popup(app, true);
   thread::sleep(Duration::from_millis(150));
   // Paste instead of typing: typed line breaks would press Enter (= "send" in chat apps).
-  arboard::Clipboard::new()
-    .and_then(|mut c| c.set_text(text))
-    .map_err(|e| e.to_string())?;
-  tap(Key::Backspace); // remove the "//" the user typed
-  tap(Key::Backspace);
+  let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+  // shortcut: only text or an image is put back afterwards; copied files are lost, rare enough for now.
+  let old_text = clip.get_text().ok();
+  let old_image = if old_text.is_none() { clip.get_image().ok() } else { None };
+  clip.set_text(text).map_err(|e| e.to_string())?;
+  if TYPED.load(SeqCst) {
+    tap(Key::Backspace); // remove the "//" the user typed
+    tap(Key::Backspace);
+  }
   send(EventType::KeyPress(Key::ControlLeft));
   tap(Key::KeyV);
   send(EventType::KeyRelease(Key::ControlLeft));
+  thread::sleep(Duration::from_millis(400)); // the app reads the clipboard after Ctrl+V; give it time
+  let _ = match (old_text, old_image) {
+    (Some(t), _) => clip.set_text(t),
+    (None, Some(img)) => clip.set_image(img),
+    (None, None) => clip.clear(),
+  };
   Ok(())
 }
 
-fn open_popup(app: &AppHandle) {
+/// `typed`: opened by typing "//" (those two characters must be removed before pasting),
+/// rather than by the shortcut key.
+fn open_popup(app: &AppHandle, typed: bool) {
+  TYPED.store(typed, SeqCst);
   TARGET.store(unsafe { GetForegroundWindow() } as isize, SeqCst);
   POPUP_OPEN.store(true, SeqCst);
   if CHIME_ON.load(SeqCst) {
@@ -197,7 +244,7 @@ fn start_hook(app: AppHandle) {
       let now = Instant::now();
       if is_trigger(prev2, prev, c, now - prev_at) {
         (prev2, prev) = (None, None);
-        open_popup(&app);
+        open_popup(&app, true);
       } else {
         (prev2, prev) = (prev, Some(c));
       }
@@ -217,11 +264,36 @@ fn show_main(app: &AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    // Must come first: a second copy hands over to the running one (shows its window) and quits,
+    // so two keyboard hooks never open two pickers.
+    .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+      if !args.iter().any(|a| a == "--hidden") {
+        show_main(app);
+      }
+    }))
     .plugin(tauri_plugin_autostart::init(
       tauri_plugin_autostart::MacosLauncher::LaunchAgent,
       Some(vec!["--hidden"]),
     ))
-    .invoke_handler(tauri::generate_handler![load_commands, save_commands, get_chime, set_chime, system_colors, hide_popup, insert])
+    .plugin(
+      tauri_plugin_global_shortcut::Builder::new()
+        .with_handler(|app, _shortcut, event| {
+          if event.state == ShortcutState::Pressed && !POPUP_OPEN.load(SeqCst) {
+            open_popup(app, false);
+          }
+        })
+        .build(),
+    )
+    .invoke_handler(tauri::generate_handler![
+      load_commands,
+      save_commands,
+      get_settings,
+      set_chime,
+      set_shortcut,
+      system_colors,
+      hide_popup,
+      insert
+    ])
     .on_window_event(|window, event| match event {
       // Closing only hides: the app keeps listening for "//" from the tray.
       WindowEvent::CloseRequested { api, .. } => {
@@ -266,9 +338,11 @@ pub fn run() {
         }
       }
 
-      // A missing or unreadable settings file just means the default: chime on.
-      let settings = read_json(app.handle(), "settings.json", json!({})).unwrap_or_default();
+      // A missing or unreadable settings file just means the defaults: chime on, no shortcut.
+      let settings = get_settings(app.handle().clone());
       CHIME_ON.store(settings["chime"].as_bool().unwrap_or(true), SeqCst);
+      // A shortcut another app has taken since is skipped; "//" still works.
+      let _ = register_shortcut(app.handle(), settings["shortcut"].as_str().unwrap_or(""));
 
       if !std::env::args().any(|a| a == "--hidden") {
         show_main(app.handle());
@@ -284,6 +358,15 @@ pub fn run() {
 mod tests {
   use super::{centered, is_trigger};
   use std::time::Duration;
+  use tauri_plugin_global_shortcut::Shortcut;
+
+  #[test]
+  fn shortcut_format_from_the_ui_parses() {
+    // index.html builds these strings from the keys pressed; the plugin must accept them.
+    for s in ["Ctrl+Shift+Space", "Ctrl+K", "Alt+1", "Ctrl+Alt+F5", "Ctrl+Backquote"] {
+      assert!(s.parse::<Shortcut>().is_ok(), "{s}");
+    }
+  }
 
   #[test]
   fn centre_on_screen() {

@@ -13,6 +13,11 @@
     <div class="nav" id="list"></div>
     <div class="side-foot">
       <label class="switch"><input type="checkbox" id="chime"> Chime sound</label>
+      <div>
+        <label class="lbl" for="shortcut" style="margin-top: 0">Shortcut key</label>
+        <input class="ctrl" id="shortcut" readonly placeholder="Click, then press keys" aria-describedby="shortcutHint">
+        <p class="hint" id="shortcutHint">Opens the list too. Backspace removes it.</p>
+      </div>
       <p class="hint">Type <kbd>//</kbd> anywhere to insert a command.</p>
     </div>
   </nav>
@@ -153,7 +158,35 @@ $('new').onclick = () => edit(-1);
 $('search').oninput = render;
 $('search').onkeydown = e => { if (e.key === 'Escape') { $('search').value = ''; render(); } };
 
-invoke('get_chime').then(on => { $('chime').checked = on; });
+invoke('get_settings').then(s => {
+  $('chime').checked = s.chime !== false;
+  $('shortcut').value = s.shortcut || '';
+});
+
+// Shortcut recorder: hold Ctrl and/or Alt, press a key. Saved as e.g. "Ctrl+Shift+Space",
+// the format the global-shortcut plugin parses (checked by a test in lib.rs).
+async function setShortcut(s) {
+  try {
+    await invoke('set_shortcut', { shortcut: s });
+    $('shortcut').value = s;
+    $('shortcut').removeAttribute('aria-invalid');
+    hideTip();
+    toast(s ? 'Shortcut saved' : 'Shortcut removed');
+  } catch (e) {
+    fieldError($('shortcut'), s + ' is already used by another app. Try another one.');
+  }
+}
+$('shortcut').onkeydown = e => {
+  if (e.key === 'Tab') return; // keep keyboard navigation working
+  e.preventDefault();
+  if (e.key === 'Escape') return $('shortcut').blur();
+  if (e.key === 'Backspace' || e.key === 'Delete') return setShortcut('');
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return; // wait for the real key
+  if (!e.ctrlKey && !e.altKey) return fieldError($('shortcut'), 'Hold Ctrl or Alt, then press a key.');
+  const key = e.code.replace(/^(Key|Digit)/, '');
+  setShortcut([e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', key].filter(Boolean).join('+'));
+};
+$('shortcut').onblur = () => { if ($('shortcut').getAttribute('aria-invalid')) { $('shortcut').removeAttribute('aria-invalid'); hideTip(); } };
 $('chime').onchange = async () => {
   const on = $('chime').checked;
   try {
