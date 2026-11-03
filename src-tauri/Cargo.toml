@@ -1,6 +1,6 @@
 [package]
 name = "shorthand"
-version = "0.1.1"
+version = "0.1.2"
 description = "Type // to insert saved phrases anywhere in Windows"
 authors = ["RusticBlade09"]
 license = "MIT"
